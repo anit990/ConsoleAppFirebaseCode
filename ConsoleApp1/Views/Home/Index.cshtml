@@ -1,0 +1,32 @@
+﻿@using WebAppDemo.Models
+@{
+    ViewData["Title"] = "Firebase Notifications";
+    var config = (FirebaseSettings)ViewBag.FirebaseConfig;
+}
+
+<h1>Firebase Push Notification</h1>
+<button id="notifyBtn">Enable Notifications</button>
+
+<script>
+    // Inject the Firebase API key into the service worker script
+    window.ApiKey = "@config.ApiKey";
+    window.AuthDomain = "@config.AuthDomain";
+    window.ProjectId = "@config.ProjectId";
+    window.MessagingSenderId = "@config.MessagingSenderId";
+    window.AppId = "@config.AppId";
+</script>
+
+<script>
+    window.firebaseSettings = {
+        apiKey: "@config.ApiKey",
+        authDomain: "@config.AuthDomain",
+        projectId: "@config.ProjectId",
+        messagingSenderId: "@config.MessagingSenderId",
+        appId: "@config.AppId",
+        vapidKey: "@config.VapidKey"
+    };
+</script>
+
+<script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-messaging-compat.js"></script>
+<script src="~/js/firebase-notify.js"></script>
