@@ -1,0 +1,321 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.Linq;
+using System.Threading.Tasks;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddControllersWithViews();
+builder.Services.AddDbContext<AppDb>(opt => opt.UseInMemoryDatabase("quizdb"));
+var app = builder.Build();
+
+app.UseStaticFiles();
+app.UseRouting();
+app.MapDefaultControllerRoute();
+
+SeedData(app);
+
+app.Run();
+
+// -------------------- Models --------------------
+public class Quiz
+{
+    public int Id { get; set; }
+    [Required] public string Title { get; set; }
+    public List<Question> Questions { get; set; } = new();
+}
+
+public enum QuestionType { Checkbox, Radio, Dropdown, Textbox }
+
+public class Question
+{
+    public int Id { get; set; }
+    [Required] public string Text { get; set; }
+    public QuestionType Type { get; set; }
+    public int QuizId { get; set; }
+    public Quiz Quiz { get; set; }
+    public List<Option> Options { get; set; } = new();
+}
+
+public class Option
+{
+    public int Id { get; set; }
+    [Required] public string Text { get; set; }
+    public int QuestionId { get; set; }
+    public Question Question { get; set; }
+}
+
+public class AppDb : DbContext
+{
+    public AppDb(DbContextOptions<AppDb> opts) : base(opts) { }
+    public DbSet<Quiz> Quizzes => Set<Quiz>();
+    public DbSet<Question> Questions => Set<Question>();
+    public DbSet<Option> Options => Set<Option>();
+}
+
+// -------------------- Controllers --------------------
+public class HomeController : Controller
+{
+    private readonly AppDb _db;
+    public HomeController(AppDb db) => _db = db;
+    public IActionResult Index() => RedirectToAction("Index", "Quizzes");
+}
+
+public class QuizzesController : Controller
+{
+    private readonly AppDb _db;
+    public QuizzesController(AppDb db) => _db = db;
+
+    public async Task<IActionResult> Index() =>
+        View(await _db.Quizzes.ToListAsync());
+
+    public async Task<IActionResult> Take(int id)
+    {
+        var quiz = await _db.Quizzes.Include(q => q.Questions)
+                                    .ThenInclude(q => q.Options)
+                                    .FirstOrDefaultAsync(q => q.Id == id);
+        return View(quiz);
+    }
+
+    [HttpPost]
+    public IActionResult Submit(int quizId)
+    {
+        // Here you would save answers. For demo, redirect to Index.
+        return RedirectToAction("Index");
+    }
+}
+
+public class AdminController : Controller
+{
+    private readonly AppDb _db;
+    public AdminController(AppDb db) => _db = db;
+
+    public async Task<IActionResult> Index()
+    {
+        return View(await _db.Quizzes.Include(q => q.Questions).ToListAsync());
+    }
+
+    public IActionResult CreateQuiz() => View();
+
+    [HttpPost]
+    public async Task<IActionResult> CreateQuiz(Quiz quiz)
+    {
+        _db.Quizzes.Add(quiz);
+        await _db.SaveChangesAsync();
+        return RedirectToAction("Index");
+    }
+
+    public async Task<IActionResult> AddQuestion(int quizId)
+    {
+        var quiz = await _db.Quizzes.Include(q => q.Questions)
+                                    .ThenInclude(q => q.Options)
+                                    .FirstOrDefaultAsync(q => q.Id == quizId);
+        return View(quiz);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> AddQuestion(int quizId, Question question, List<string> optionTexts)
+    {
+        question.QuizId = quizId;
+        if (optionTexts != null)
+            foreach (var t in optionTexts.Where(x => !string.IsNullOrWhiteSpace(x)))
+                question.Options.Add(new Option { Text = t });
+
+        _db.Questions.Add(question);
+        await _db.SaveChangesAsync();
+        return RedirectToAction("AddQuestion", new { quizId });
+    }
+
+    public async Task<IActionResult> EditQuestion(int id)
+    {
+        var question = await _db.Questions.Include(q => q.Options).FirstOrDefaultAsync(q => q.Id == id);
+        return View(question);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> EditQuestion(Question question, List<string> optionTexts)
+    {
+        var dbQ = await _db.Questions.Include(q => q.Options).FirstOrDefaultAsync(q => q.Id == question.Id);
+        if (dbQ == null) return NotFound();
+
+        dbQ.Text = question.Text;
+        dbQ.Type = question.Type;
+        dbQ.Options.Clear();
+        if (optionTexts != null)
+            foreach (var t in optionTexts.Where(x => !string.IsNullOrWhiteSpace(x)))
+                dbQ.Options.Add(new Option { Text = t });
+
+        await _db.SaveChangesAsync();
+        return RedirectToAction("AddQuestion", new { quizId = dbQ.QuizId });
+    }
+}
+
+// -------------------- Views --------------------
+// /Views/Quizzes/Index.cshtml
+/*
+@model List<Quiz>
+<h1>Available Quizzes</h1>
+<ul>
+@foreach(var q in Model){
+  <li><a href="/Quizzes/Take/@q.Id">@q.Title</a> (Questions: @q.Questions.Count)</li>
+}
+</ul>
+<a href="/Admin">Admin Panel</a>
+*/
+
+// /Views/Quizzes/Take.cshtml
+/*
+@model Quiz
+<h1>@Model.Title</h1>
+<form method="post" action="/Quizzes/Submit?quizId=@Model.Id">
+@foreach(var question in Model.Questions){
+ <div style="border:1px solid #ccc; margin:10px; padding:10px;">
+   <label><strong>@question.Text</strong></label><br/>
+   @if(question.Type==QuestionType.Radio){
+     foreach(var o in question.Options){
+       <input type="radio" name="q_@question.Id" value="@o.Id"/> @o.Text <br/>
+     }
+   } else if(question.Type==QuestionType.Checkbox){
+     foreach(var o in question.Options){
+       <input type="checkbox" name="q_@question.Id" value="@o.Id"/> @o.Text <br/>
+     }
+   } else if(question.Type==QuestionType.Dropdown){
+     <select name="q_@question.Id">
+       <option value="">--Select--</option>
+       @foreach(var o in question.Options){
+         <option value="@o.Id">@o.Text</option>
+       }
+     </select>
+   } else {
+     <textarea name="q_@question.Id" rows="3" style="width:100%"></textarea>
+   }
+ </div>
+}
+ <button type="submit">Submit</button>
+</form>
+*/
+
+// /Views/Admin/Index.cshtml
+/*
+@model List<Quiz>
+<h1>Admin Dashboard</h1>
+<a href="/Admin/CreateQuiz">+ New Quiz</a>
+<ul>
+@foreach(var q in Model){
+  <li>@q.Title - <a href="/Admin/AddQuestion?quizId=@q.Id">Manage Questions</a></li>
+}
+</ul>
+*/
+
+// /Views/Admin/CreateQuiz.cshtml
+/*
+@model Quiz
+<h1>Create Quiz</h1>
+<form method="post">
+ <input type="text" name="Title" placeholder="Quiz Title" required/>
+ <button type="submit">Save</button>
+</form>
+*/
+
+// /Views/Admin/AddQuestion.cshtml
+/*
+@model Quiz
+<h1>Manage Questions - @Model.Title</h1>
+<form method="post" action="/Admin/AddQuestion?quizId=@Model.Id">
+ <input type="hidden" name="quizId" value="@Model.Id"/>
+ <h3>Add New Question</h3>
+ <label>Question:</label><br/>
+ <input type="text" name="Text" required/><br/>
+ <label>Type:</label>
+ <select id="qtype" name="Type" onchange="toggle()">
+   <option>Checkbox</option>
+   <option>Radio</option>
+   <option>Dropdown</option>
+   <option>Textbox</option>
+ </select><br/>
+ <div id="optDiv">
+   <input type="text" name="optionTexts" placeholder="Option 1"/><br/>
+   <input type="text" name="optionTexts" placeholder="Option 2"/><br/>
+ </div>
+ <button type="submit">Save</button>
+</form>
+<hr/>
+<h3>Existing Questions</h3>
+@foreach (var q in Model.Questions){
+ <div style="border:1px solid #ccc; margin:10px; padding:10px;">
+   <strong>@q.Text</strong> (@q.Type)<br/>
+   @if(q.Options.Any()){<ul>@foreach(var o in q.Options){<li>@o.Text</li>}</ul>}
+   <a href="/Admin/EditQuestion/@q.Id">✏️ Edit</a>
+ </div>
+}
+<script>
+function toggle(){
+ let t=document.getElementById("qtype").value;
+ document.getElementById("optDiv").style.display=(t==="Textbox"?"none":"block");
+}
+toggle();
+</script>
+*/
+
+// /Views/Admin/EditQuestion.cshtml
+/*
+@model Question
+<h1>Edit Question</h1>
+<form method="post" action="/Admin/EditQuestion">
+ <input type="hidden" name="Id" value="@Model.Id"/>
+ <input type="hidden" name="QuizId" value="@Model.QuizId"/>
+ <label>Question:</label><br/>
+ <input type="text" name="Text" value="@Model.Text" required/><br/>
+ <label>Type:</label>
+ <select id="qtype" name="Type" onchange="toggle()">
+   <option value="Checkbox" selected="@(Model.Type==QuestionType.Checkbox)">Checkbox</option>
+   <option value="Radio" selected="@(Model.Type==QuestionType.Radio)">Radio</option>
+   <option value="Dropdown" selected="@(Model.Type==QuestionType.Dropdown)">Dropdown</option>
+   <option value="Textbox" selected="@(Model.Type==QuestionType.Textbox)">Textbox</option>
+ </select><br/>
+ <div id="optDiv">
+   @for(int i=0;i<Model.Options.Count;i++){
+     <input type="text" name="optionTexts" value="@Model.Options[i].Text"/><br/>
+   }
+   <input type="text" name="optionTexts" placeholder="Add new option"/><br/>
+ </div>
+ <button type="submit">Update</button>
+</form>
+<script>
+function toggle(){
+ let t=document.getElementById("qtype").value;
+ document.getElementById("optDiv").style.display=(t==="Textbox"?"none":"block");
+}
+toggle();
+</script>
+*/
+
+// -------------------- Seed --------------------
+void SeedData(WebApplication app)
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDb>();
+    if (!db.Quizzes.Any())
+    {
+        var quiz = new Quiz { Title = "Sample Quiz" };
+        quiz.Questions.Add(new Question
+        {
+            Text = "What is your favorite color?",
+            Type = QuestionType.Radio,
+            Options = new List<Option> {
+                new Option{Text="Red"}, new Option{Text="Blue"}, new Option{Text="Green"} }
+        });
+        quiz.Questions.Add(new Question
+        {
+            Text = "Enter your feedback:",
+            Type = QuestionType.Textbox
+        });
+        db.Quizzes.Add(quiz);
+        db.SaveChanges();
+    }
+}
