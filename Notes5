@@ -1,0 +1,108 @@
+@model IEnumerable<Quiz>
+
+<h2>Available Quizzes</h2>
+<ul class="list-group">
+@foreach (var q in Model)
+{
+    <li class="list-group-item">
+        @q.Title
+        <a class="btn btn-sm btn-success float-end" href="/Quizzes/Take?quizId=@q.Id&userId=1">Take Quiz</a>
+    </li>
+}
+</ul>
+@model UserQuiz
+
+<h2>Take Quiz: @Model.Quiz.Title</h2>
+
+<form method="post" action="/Quizzes/Submit?quizId=@Model.QuizId&userId=@Model.UserId">
+@foreach (var q in Model.Quiz.Questions)
+{
+    <div class="mb-3">
+        <label><b>@q.Text</b></label>
+        @if (!string.IsNullOrEmpty(q.ImagePath))
+        {
+            <div><img src="@q.ImagePath" width="150" /></div>
+        }
+
+        @switch (q.Type)
+        {
+            case QuestionType.Textbox:
+                <input type="text" name="q_@q.Id" class="form-control" />
+                break;
+            case QuestionType.Radio:
+                foreach (var opt in q.Options)
+                {
+                    <div><input type="radio" name="q_@q.Id" value="@opt.Id" /> @opt.Text</div>
+                }
+                break;
+            case QuestionType.Checkbox:
+                foreach (var opt in q.Options)
+                {
+                    <div><input type="checkbox" name="q_@q.Id" value="@opt.Id" /> @opt.Text</div>
+                }
+                break;
+            case QuestionType.Dropdown:
+                <select name="q_@q.Id" class="form-select">
+                    @foreach (var opt in q.Options)
+                    {
+                        <option value="@opt.Id">@opt.Text</option>
+                    }
+                </select>
+                break;
+        }
+    </div>
+}
+<button type="submit" class="btn btn-primary">Submit</button>
+</form>
+@model UserQuiz
+
+<h2>Result: @Model.Quiz.Title (User: @Model.User.Name)</h2>
+<ul class="list-group">
+@foreach (var a in Model.Answers)
+{
+    <li class="list-group-item">
+        <b>@a.Question.Text</b> <br />
+        Answer: @a.AnswerText @a.SelectedOptionIds
+    </li>
+}
+</ul>
+@model IEnumerable<User>
+
+<h2>Users</h2>
+<a class="btn btn-primary mb-2" href="/Users/Create">+ Add User</a>
+
+<table class="table">
+<tr><th>Name</th><th>Quizzes</th><th>Actions</th></tr>
+@foreach (var u in Model)
+{
+    <tr>
+        <td>@u.Name</td>
+        <td>@string.Join(", ", u.UserQuizzes.Select(x => x.Quiz.Title))</td>
+        <td><a href="/Users/AssignQuiz?userId=@u.Id" class="btn btn-sm btn-success">Assign Quiz</a></td>
+    </tr>
+}
+</table>
+@model User
+
+<h2>Create User</h2>
+<form method="post">
+    <div class="mb-3">
+        <label>Name</label>
+        <input class="form-control" name="Name" />
+    </div>
+    <button type="submit" class="btn btn-primary">Save</button>
+</form>
+@model User
+@{ var quizzes = ViewBag.Quizzes as List<Quiz>; }
+
+<h2>Assign Quiz to @Model.Name</h2>
+<form method="post">
+    <select name="quizId" class="form-select">
+        @foreach (var q in quizzes)
+        {
+            <option value="@q.Id">@q.Title</option>
+        }
+    </select>
+    <button type="submit" class="btn btn-primary mt-2">Assign</button>
+</form>
+
