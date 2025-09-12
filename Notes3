@@ -1,0 +1,231 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddControllersWithViews();
+builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlite("Data Source=quiz.db"));
+
+var app = builder.Build();
+
+// ✅ Auto-drop & recreate DB
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.EnsureDeleted();
+    db.Database.EnsureCreated();
+}
+
+app.UseStaticFiles();
+app.UseRouting();
+app.MapControllerRoute(name: "default", pattern: "{controller=Quizzes}/{action=Index}/{id?}");
+app.Run();
+
+
+// ======================= MODELS =======================
+public class Quiz
+{
+    public int Id { get; set; }
+    [Required] public string Title { get; set; }
+    public List<Question> Questions { get; set; } = new();
+}
+public enum QuestionType { Checkbox, Radio, Dropdown, Textbox }
+public class Question
+{
+    public int Id { get; set; }
+    [Required] public string Text { get; set; }
+    public QuestionType Type { get; set; }
+    public int QuizId { get; set; }
+    public Quiz Quiz { get; set; }
+    public List<Option> Options { get; set; } = new();
+    public string? ImagePath { get; set; }
+}
+public class Option
+{
+    public int Id { get; set; }
+    [Required] public string Text { get; set; }
+    public int QuestionId { get; set; }
+    public Question Question { get; set; }
+    public string? ImagePath { get; set; }
+}
+public class User
+{
+    public int Id { get; set; }
+    [Required] public string Name { get; set; }
+    public List<UserQuiz> UserQuizzes { get; set; } = new();
+}
+public class UserQuiz
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User User { get; set; }
+    public int QuizId { get; set; }
+    public Quiz Quiz { get; set; }
+    public List<UserAnswer> Answers { get; set; } = new();
+}
+public class UserAnswer
+{
+    public int Id { get; set; }
+    public int UserQuizId { get; set; }
+    public UserQuiz UserQuiz { get; set; }
+    public int QuestionId { get; set; }
+    public Question Question { get; set; }
+    public string? AnswerText { get; set; }
+    public string? SelectedOptionIds { get; set; }
+}
+public class AppDbContext : DbContext
+{
+    public AppDbContext(DbContextOptions<AppDbContext> o) : base(o) { }
+    public DbSet<Quiz> Quizzes { get; set; }
+    public DbSet<Question> Questions { get; set; }
+    public DbSet<Option> Options { get; set; }
+    public DbSet<User> Users { get; set; }
+    public DbSet<UserQuiz> UserQuizzes { get; set; }
+    public DbSet<UserAnswer> UserAnswers { get; set; }
+}
+
+
+// ======================= CONTROLLERS =======================
+public class QuizzesController : Controller
+{
+    private readonly AppDbContext _db;
+    public QuizzesController(AppDbContext db) => _db = db;
+
+    public IActionResult Index() => View(_db.Quizzes.ToList());
+
+    public IActionResult Take(int quizId, int userId)
+    {
+        var uq = _db.UserQuizzes.Include(x => x.Quiz).ThenInclude(q => q.Questions).ThenInclude(q => q.Options)
+                 .FirstOrDefault(x => x.QuizId == quizId && x.UserId == userId);
+        if (uq == null) return NotFound();
+        return View(uq);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> Submit(int quizId, int userId, IFormCollection form)
+    {
+        var uq = _db.UserQuizzes.Include(x => x.Answers)
+                 .FirstOrDefault(x => x.QuizId == quizId && x.UserId == userId);
+        if (uq == null) return NotFound();
+
+        foreach (var q in _db.Questions.Include(x => x.Options).Where(x => x.QuizId == quizId))
+        {
+            string key = "q_" + q.Id;
+            if (form.ContainsKey(key))
+            {
+                string value = (q.Type == QuestionType.Checkbox)
+                    ? string.Join(",", form[key])
+                    : form[key];
+
+                uq.Answers.Add(new UserAnswer
+                {
+                    QuestionId = q.Id,
+                    AnswerText = (q.Type == QuestionType.Textbox ? value : null),
+                    SelectedOptionIds = (q.Type != QuestionType.Textbox ? value : null)
+                });
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        return RedirectToAction("Result", new { userQuizId = uq.Id });
+    }
+
+    public IActionResult Result(int userQuizId)
+    {
+        var uq = _db.UserQuizzes.Include(x => x.User)
+                 .Include(x => x.Quiz).ThenInclude(q => q.Questions).ThenInclude(q => q.Options)
+                 .Include(x => x.Answers)
+                 .FirstOrDefault(x => x.Id == userQuizId);
+        return View(uq);
+    }
+}
+
+public class UsersController : Controller
+{
+    private readonly AppDbContext _db;
+    public UsersController(AppDbContext db) => _db = db;
+
+    public IActionResult Index() => View(_db.Users.Include(u => u.UserQuizzes).ThenInclude(uq => uq.Quiz).ToList());
+
+    [HttpGet] public IActionResult Create() => View();
+
+    [HttpPost]
+    public async Task<IActionResult> Create(User user)
+    {
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync();
+        return RedirectToAction("Index");
+    }
+
+    [HttpGet]
+    public IActionResult AssignQuiz(int userId)
+    {
+        ViewBag.Quizzes = _db.Quizzes.ToList();
+        return View(_db.Users.Find(userId));
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> AssignQuiz(int userId, int quizId)
+    {
+        if (!_db.UserQuizzes.Any(uq => uq.UserId == userId && uq.QuizId == quizId))
+        {
+            _db.UserQuizzes.Add(new UserQuiz { UserId = userId, QuizId = quizId });
+            await _db.SaveChangesAsync();
+        }
+        return RedirectToAction("Index");
+    }
+}
+
+public class AdminController : Controller
+{
+    private readonly AppDbContext _db;
+    public AdminController(AppDbContext db) => _db = db;
+
+    public IActionResult Index() => View(_db.Quizzes.Include(q => q.Questions).ToList());
+
+    [HttpGet] public IActionResult CreateQuiz() => View();
+    [HttpPost]
+    public async Task<IActionResult> CreateQuiz(Quiz quiz)
+    {
+        _db.Quizzes.Add(quiz);
+        await _db.SaveChangesAsync();
+        return RedirectToAction("Index");
+    }
+
+    public IActionResult AddQuestion(int quizId)
+    {
+        var quiz = _db.Quizzes.Include(q => q.Questions).ThenInclude(q => q.Options).FirstOrDefault(q => q.Id == quizId);
+        return View(quiz);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> AddQuestion(int quizId, Question question, List<string> optionTexts)
+    {
+        question.QuizId = quizId;
+        foreach (var txt in optionTexts.Where(t => !string.IsNullOrWhiteSpace(t)))
+            question.Options.Add(new Option { Text = txt });
+        _db.Questions.Add(question);
+        await _db.SaveChangesAsync();
+        return RedirectToAction("AddQuestion", new { quizId });
+    }
+
+    public async Task<IActionResult> DeleteQuiz(int id)
+    {
+        var quiz = _db.Quizzes.Include(q => q.Questions).ThenInclude(q => q.Options).FirstOrDefault(q => q.Id == id);
+        if (quiz != null) { _db.Quizzes.Remove(quiz); await _db.SaveChangesAsync(); }
+        return RedirectToAction("Index");
+    }
+
+    public async Task<IActionResult> DeleteQuestion(int id)
+    {
+        var q = _db.Questions.Include(x => x.Options).FirstOrDefault(x => x.Id == id);
+        if (q != null) { int quizId = q.QuizId; _db.Questions.Remove(q); await _db.SaveChangesAsync(); return RedirectToAction("AddQuestion", new { quizId }); }
+        return NotFound();
+    }
+
+    public IActionResult Results()
+    {
+        var data = _db.UserQuizzes.Include(uq => uq.User).Include(uq => uq.Quiz).Include(uq => uq.Answers).ThenInclude(a => a.Question).ToList();
+        return View(data);
+    }
+}
