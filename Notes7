@@ -1,0 +1,157 @@
+@foreach (var q in Model.Questions)
+{
+    <div class="mb-3">
+        <label><b>@q.Text</b></label>
+
+        @if (q.Type == "Textbox")
+        {
+            <input type="text" name="Answers[@q.Id]" class="form-control" />
+        }
+        else if (q.Type == "Radio")
+        {
+            foreach (var opt in q.Options.Split(';'))
+            {
+                <div class="form-check">
+                    <input type="radio" name="Answers[@q.Id]" value="@opt" class="form-check-input" />
+                    <label class="form-check-label">@opt</label>
+                </div>
+            }
+        }
+        else if (q.Type == "Checkbox")
+        {
+            foreach (var opt in q.Options.Split(';'))
+            {
+                <div class="form-check">
+                    <input type="checkbox" name="Answers[@q.Id]" value="@opt" class="form-check-input" />
+                    <label class="form-check-label">@opt</label>
+                </div>
+            }
+        }
+        else if (q.Type == "Dropdown")
+        {
+            <select name="Answers[@q.Id]" class="form-select">
+                <option value="">-- Select --</option>
+                @foreach (var opt in q.Options.Split(';'))
+                {
+                    <option value="@opt">@opt</option>
+                }
+            </select>
+        }
+    </div>
+}
+[HttpPost]
+public async Task<IActionResult> Take(int quizId, Dictionary<int, string[]> Answers)
+{
+    var userId = 1; // TODO: from logged-in user
+    foreach (var entry in Answers)
+    {
+        int qid = entry.Key;
+        string[] values = entry.Value;
+        string answer = string.Join(";", values); // store multiple selections
+
+        _db.Answers.Add(new Answer { UserId = userId, QuestionId = qid, Response = answer });
+    }
+    await _db.SaveChangesAsync();
+
+    return RedirectToAction("Result", new { quizId, userId });
+}
+
+@model List<Answer>
+
+<h2>Quiz Results</h2>
+
+@foreach (var ans in Model)
+{
+    <div class="mb-3">
+        <b>@ans.Question.Text</b><br />
+
+        @if (ans.Question.Type == "Checkbox" || ans.Question.Type == "Radio" || ans.Question.Type == "Dropdown")
+        {
+            var selected = ans.Response?.Split(';') ?? Array.Empty<string>();
+            foreach (var opt in ans.Question.Options.Split(';'))
+            {
+                if (selected.Contains(opt))
+                {
+                    <div class="text-success">✔ @opt</div>
+                }
+                else
+                {
+                    <div>@opt</div>
+                }
+            }
+        }
+        else if (ans.Question.Type == "Textbox")
+        {
+            <div class="text-success">Answer: @ans.Response</div>
+        }
+    </div>
+}
+@model List<Answer>
+@{
+    int total = Model.Count;
+    int correct = 0;
+}
+
+<h2>Quiz Results</h2>
+
+@foreach (var ans in Model)
+{
+    var correctAnswer = ans.Question.CorrectAnswer?.Split(';') ?? Array.Empty<string>();
+    var userAnswer = ans.Response?.Split(';') ?? Array.Empty<string>();
+    bool isCorrect = !correctAnswer.Except(userAnswer).Any() && !userAnswer.Except(correctAnswer).Any();
+
+    if (isCorrect) { correct++; }
+
+    <div class="mb-3">
+        <b>@ans.Question.Text</b><br />
+
+        @if (ans.Question.Type == "Textbox")
+        {
+            <div>User Answer: <span class="@(isCorrect ? "text-success" : "text-danger")">@ans.Response</span></div>
+            <div>Correct Answer: <b>@ans.Question.CorrectAnswer</b></div>
+        }
+        else
+        {
+            foreach (var opt in ans.Question.Options.Split(';'))
+            {
+                if (userAnswer.Contains(opt) && correctAnswer.Contains(opt))
+                {
+                    <div class="text-success">✔ @opt (Correct)</div>
+                }
+                else if (userAnswer.Contains(opt) && !correctAnswer.Contains(opt))
+                {
+                    <div class="text-danger">✘ @opt (Wrong)</div>
+                }
+                else if (correctAnswer.Contains(opt))
+                {
+                    <div><b>@opt</b> (Correct Answer)</div>
+                }
+                else
+                {
+                    <div>@opt</div>
+                }
+            }
+        }
+    </div>
+}
+
+<hr />
+<h3>Score: @correct / @total</h3>
+
+
+
+
+var results = _db.Answers
+    .Include(a => a.Question)
+    .Where(a => a.Question.QuizId == quizId)
+    .GroupBy(a => a.UserId)
+    .Select(g => new {
+        UserId = g.Key,
+        UserName = _db.Users.First(u => u.Id == g.Key).Name,
+        Correct = g.Count(a => {
+            var correct = a.Question.CorrectAnswer?.Split(';') ?? Array.Empty<string>();
+            var userAns = a.Response?.Split(';') ?? Array.Empty<string>();
+            return !correct.Except(userAns).Any() && !userAns.Except(correct).Any();
+        }),
+        Total = g.Count()
+    }).ToList();
