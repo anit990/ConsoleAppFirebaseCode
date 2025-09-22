@@ -1,0 +1,133 @@
+// FILE: Program.cs
+using MvcDelegateDemo.Middleware;
+using MvcDelegateDemo.Services;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services
+builder.Services.AddControllersWithViews();
+builder.Services.AddSingleton<UserProcessor>();
+
+var app = builder.Build();
+
+// Use custom delegate-based middleware
+app.UseRequestLogging();
+
+app.UseRouting();
+app.UseEndpoints(endpoints =>
+{
+    endpoints.MapControllerRoute(
+        name: "default",
+        pattern: "{controller=Home}/{action=Index}/{id?}");
+});
+
+app.Run();
+
+
+// FILE: Middleware/LoggingMiddleware.cs
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using System;
+using System.Threading.Tasks;
+
+namespace MvcDelegateDemo.Middleware
+{
+    public class LoggingMiddleware
+    {
+        private readonly RequestDelegate _next; // delegate
+
+        public LoggingMiddleware(RequestDelegate next)
+        {
+            _next = next;
+        }
+
+        public async Task InvokeAsync(HttpContext context)
+        {
+            Console.WriteLine($"[Middleware] Request: {context.Request.Path}");
+
+            await _next(context); // calls the next middleware
+
+            Console.WriteLine($"[Middleware] Response: {context.Response.StatusCode}");
+        }
+    }
+
+    public static class MiddlewareExtensions
+    {
+        public static IApplicationBuilder UseRequestLogging(this IApplicationBuilder builder)
+        {
+            return builder.UseMiddleware<LoggingMiddleware>();
+        }
+    }
+}
+
+
+// FILE: Services/UserProcessor.cs
+using System;
+using System.Collections.Generic;
+
+namespace MvcDelegateDemo.Services
+{
+    public class UserProcessor
+    {
+        public void ProcessUsers(List<string> users, Action<string> action)
+        {
+            foreach (var user in users)
+            {
+                action(user); // delegate call
+            }
+        }
+
+        public List<string> FilterUsers(List<string> users, Func<string, bool> filter)
+        {
+            return users.FindAll(new Predicate<string>(filter));
+        }
+    }
+}
+
+
+// FILE: Controllers/HomeController.cs
+using Microsoft.AspNetCore.Mvc;
+using MvcDelegateDemo.Services;
+using System.Collections.Generic;
+
+namespace MvcDelegateDemo.Controllers
+{
+    public class HomeController : Controller
+    {
+        private readonly UserProcessor _processor;
+
+        public HomeController(UserProcessor processor)
+        {
+            _processor = processor;
+        }
+
+        public IActionResult Index()
+        {
+            var users = new List<string> { "Anit", "Amit", "Ravi", "John" };
+
+            // Example 1: Action delegate
+            _processor.ProcessUsers(users, u => Console.WriteLine($"User: {u}"));
+
+            // Example 2: Func delegate
+            var filtered = _processor.FilterUsers(users, u => u.StartsWith("A"));
+
+            ViewBag.Users = filtered;
+            return View();
+        }
+    }
+}
+
+
+// FILE: Views/Home/Index.cshtml
+@{
+    ViewData["Title"] = "Delegate Demo";
+}
+
+<h2>Filtered Users (Starts with A)</h2>
+
+<ul>
+@foreach (var user in ViewBag.Users)
+{
+    <li>@user</li>
+}
+</ul>
