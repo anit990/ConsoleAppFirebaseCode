@@ -1,0 +1,113 @@
+ChatGPT
+You said:
+You work for pnb housing 
+Create a vendor risk assessment form 
+10 question MCQ and drop down
+Question on company governance it security and other such important areas
+ChatGPT said:
+Here’s a structured Vendor Risk Assessment Form draft tailored for PNB Housing, with 10 questions using a mix of MCQs and dropdowns.
+
+📋 PNB Housing – Vendor Risk Assessment Form
+Section A: Company Governance
+Company Registration (Dropdown)
+
+ Private Limited
+
+ Public Limited
+
+ LLP
+
+ Partnership
+
+ Proprietorship
+
+Does your organization have a documented Code of Conduct and Ethics policy? (MCQ)
+
+ Yes, reviewed annually
+
+ Yes, but not regularly reviewed
+
+ No formal policy
+
+ In process of developing
+
+Board Oversight: How often does senior management/board review risk management practices? (Dropdown)
+
+ Quarterly
+
+ Bi-annually
+
+ Annually
+
+ Rarely/Never
+
+Section B: IT Security & Data Protection
+Does your company follow an Information Security Framework (e.g., ISO 27001, NIST, SOC2)? (MCQ)
+
+ Yes – Certified and Valid
+
+ Yes – Framework followed but not certified
+
+ No, but under implementation
+
+ No framework in place
+
+Data Protection Measures: How do you secure sensitive customer data? (Dropdown)
+
+ Encryption at rest and in transit
+
+ Encryption at rest only
+
+ Encryption in transit only
+
+ No encryption
+
+Incident Response Plan: Do you have a documented and tested cyber incident response plan? (MCQ)
+
+ Yes – Tested within last 12 months
+
+ Yes – Not tested recently
+
+ No, but under development
+
+ No
+
+Section C: Compliance & Regulatory
+Regulatory Compliance: Which financial data protection regulations do you comply with? (Dropdown – multi-select possible)
+
+ RBI/SEBI Guidelines
+
+ GDPR
+
+ IT Act, 2000 (India)
+
+ Other (Specify)
+
+Third-Party Subcontractors: Do you engage subcontractors for delivering services? (MCQ)
+
+ Yes – With proper due diligence and contracts
+
+ Yes – Without formal review
+
+ No subcontractors used
+
+Section D: Business Continuity & Risk
+Business Continuity/Disaster Recovery (BCP/DR) Testing Frequency (Dropdown)
+
+ Quarterly
+
+ Half-yearly
+
+ Annually
+
+ Never
+
+Financial Stability Check: Has your organization undergone external financial audit in the last 2 years? (MCQ)
+
+ Yes – Clean audit report
+
+ Yes – With audit observations
+
+ No external audit conducted
+
+ Prefer not to disclose
